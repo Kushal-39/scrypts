@@ -1,16 +1,12 @@
 package notes
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
 	"encoding/json"
+	"fmt"
 	"net/http"
-	"scrypts/internal/auth"
-	"strings"
+	"scrypts/internal/utils"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
 
@@ -40,61 +36,37 @@ func CreateNoteHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract JWT from Authorization header
-	authHeader := r.Header.Get("Authorization")
-	if !strings.HasPrefix(authHeader, "Bearer ") {
-		http.Error(w, "Missing or invalid Authorization header", http.StatusUnauthorized)
-		return
-	}
-	tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		return auth.JwtSecret, nil
-	})
-	if err != nil || !token.Valid {
-		http.Error(w, "Invalid token", http.StatusUnauthorized)
-		return
-	}
-
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		http.Error(w, "Invalid token claims", http.StatusUnauthorized)
-		return
-	}
-	username, ok := claims["username"].(string)
-	if !ok {
-		http.Error(w, "Invalid token claims", http.StatusUnauthorized)
+	username, err := utils.GetUsernameFromJWT(r)
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	noteID := uuid.New().String()
-	nonce := make([]byte, 12)
-	_, err = rand.Read(nonce)
+	key := []byte("12345678901234567890123456789012") // TODO: Use scrypt for per-user keys (exactly 32 bytes)
+	nonce, err := utils.GenerateNonce(12)
 	if err != nil {
 		http.Error(w, "Failed to generate nonce", http.StatusInternalServerError)
 		return
 	}
-	key := []byte("thisis32byteslongpassphraseforaes!")
-	block,err:=aes.NewCipher(key)
-	if err!=nil{
-		http.Error(w, "Failed to create cipher", http.StatusInternalServerError)
+	// Debug prints
+	fmt.Println("Key length:", len(key))
+	fmt.Println("Nonce length:", len(nonce))
+	ciphertext, err := utils.EncryptAESGCM(key, nonce, []byte(req.Content))
+	if err != nil {
+		fmt.Println("EncryptAESGCM error:", err)
+		http.Error(w, "Failed to encrypt note", http.StatusInternalServerError)
 		return
 	}
-	gcm, err:= cipher.NewGCM(block)
-	if err!=nil{
-		http.Error(w, "Failed to create GCM", http.StatusInternalServerError)
-		return
-	}
-	ciphertext:=gcm.Seal(nil, nonce, []byte(req.Content), nil)
 
 	note := Note{
-		ID: noteID,
-		Owner: username,
-		Content: ciphertext,
-		Nonce: nonce,
-		Created: time.Now().Unix(),
+		ID:       noteID,
+		Owner:    username,
+		Content:  ciphertext,
+		Nonce:    nonce,
+		Created:  time.Now().Unix(),
 		Modified: time.Now().Unix(),
 	}
-	notes[noteID]=note
-	json.NewEncoder(w).Encode(map[string]string{"id":noteID})
+	notes[noteID] = note
+	json.NewEncoder(w).Encode(map[string]string{"id": noteID})
 }
