@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"unicode"
+	"time"
+    "github.com/golang-jwt/jwt/v5"
 )
 
 type RegisterReq struct {
@@ -12,7 +15,22 @@ type RegisterReq struct {
 	Password string `json:"password"`
 }
 
+type LoginReq struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+var jwtSecret = []byte(os.Getenv("JWT_SECRET"))
 var users = make(map[string]string)
+
+func generateJWT(username string) (string,error){
+	claims:= jwt.MapClaims{
+		"username":username,
+		"exp": time.Now().Add(15*time.Minute).Unix(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256,claims)
+	return token.SignedString(jwtSecret)
+}
 
 func isComplex(password string) bool {
 	var hasUpper, hasLower, hasDigit, hasSpecial bool
@@ -61,4 +79,30 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 
 	users[req.Username] = hashed
 	fmt.Fprintln(w, "User registered successfully")
+}
+
+func LoginHandler(w http.ResponseWriter, r *http.Request){
+	if r.Method != http.MethodPost{
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req LoginReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err!=nil{
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+	hashed,exists := users[req.Username]
+	if !exists{
+		http.Error(w, "Invalid username or password", http.StatusUnauthorized)
+		return
+	}
+	if !CheckPasswordHash(req.Password, hashed){
+		http.Error(w, "Invalid username or password", http.StatusUnauthorized)
+		return
+	}
+	token, err := generateJWT(req.Username)
+	if err != nil{
+		http.Error(w, "Could not generate Token", http.StatusInternalServerError)
+	}
+	json.NewEncoder(w).Encode(map[string]string{"token":token})
 }

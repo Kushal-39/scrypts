@@ -12,5 +12,9 @@ func main() {
 		fmt.Fprintln(w, "Scrypts is alive and kicking")
 	})
 	http.HandleFunc("/register", auth.RegisterHandler)
-	http.ListenAndServe(":8080", nil)
+	// Serve HTTP for development
+	err := http.ListenAndServe(":8080", nil)
+	if err != nil {
+		fmt.Println("Failed to start HTTP server:", err)
+	}
 }
