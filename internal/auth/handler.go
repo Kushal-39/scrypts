@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"unicode"
 	"time"
-    "github.com/golang-jwt/jwt/v5"
+	"unicode"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 type RegisterReq struct {
@@ -20,30 +21,30 @@ type LoginReq struct {
 	Password string `json:"password"`
 }
 
-var jwtSecret = []byte(os.Getenv("JWT_SECRET"))
+var JwtSecret = []byte(os.Getenv("JWT_SECRET"))
 var users = make(map[string]string)
 
-func generateJWT(username string) (string,error){
-	claims:= jwt.MapClaims{
-		"username":username,
-		"exp": time.Now().Add(15*time.Minute).Unix(),
+func generateJWT(username string) (string, error) {
+	claims := jwt.MapClaims{
+		"username": username,
+		"exp":      time.Now().Add(15 * time.Minute).Unix(),
 	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256,claims)
-	return token.SignedString(jwtSecret)
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(JwtSecret)
 }
 
 func isComplex(password string) bool {
 	var hasUpper, hasLower, hasDigit, hasSpecial bool
-	for _,c := range password{
-		switch{
+	for _, c := range password {
+		switch {
 		case unicode.IsUpper(c):
-			hasUpper=true
+			hasUpper = true
 		case unicode.IsLower(c):
-			hasLower=true
+			hasLower = true
 		case unicode.IsDigit(c):
-			hasDigit=true
+			hasDigit = true
 		case unicode.IsPunct(c):
-			hasSpecial=true
+			hasSpecial = true
 		}
 	}
 	return hasUpper && hasLower && hasDigit && hasSpecial
@@ -63,8 +64,8 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid username or password", http.StatusBadRequest)
 		return
 	}
-	if !isComplex(req.Password){
-		http.Error(w, "Password is weak(must contain uppercase,lowercase,digit,symbol)",http.StatusBadRequest)
+	if !isComplex(req.Password) {
+		http.Error(w, "Password is weak(must contain uppercase,lowercase,digit,symbol)", http.StatusBadRequest)
 		return
 	}
 	if _, exists := users[req.Username]; exists {
@@ -81,28 +82,28 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, "User registered successfully")
 }
 
-func LoginHandler(w http.ResponseWriter, r *http.Request){
-	if r.Method != http.MethodPost{
+func LoginHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	var req LoginReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err!=nil{
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
-	hashed,exists := users[req.Username]
-	if !exists{
+	hashed, exists := users[req.Username]
+	if !exists {
 		http.Error(w, "Invalid username or password", http.StatusUnauthorized)
 		return
 	}
-	if !CheckPasswordHash(req.Password, hashed){
+	if !CheckPasswordHash(req.Password, hashed) {
 		http.Error(w, "Invalid username or password", http.StatusUnauthorized)
 		return
 	}
 	token, err := generateJWT(req.Username)
-	if err != nil{
+	if err != nil {
 		http.Error(w, "Could not generate Token", http.StatusInternalServerError)
 	}
-	json.NewEncoder(w).Encode(map[string]string{"token":token})
+	json.NewEncoder(w).Encode(map[string]string{"token": token})
 }
