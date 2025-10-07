@@ -14,7 +14,20 @@ func main() {
 	})
 	http.HandleFunc("/register", auth.RegisterHandler)
 	http.HandleFunc("/login", auth.LoginHandler)
-	http.HandleFunc("/notes", notes.CreateNoteHandler)
+	http.HandleFunc("/notes", func(w http.ResponseWriter, r *http.Request){
+		switch r.Method {
+		case http.MethodPost:
+			notes.CreateNoteHandler(w,r)
+		case http.MethodGet:
+			notes.GetNotesHandler(w,r)
+		case http.MethodPut:
+			notes.UpdateNoteHandler(w, r)
+		case http.MethodDelete:
+			notes.DeleteNoteHandler(w,r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
 	err := http.ListenAndServe(":8080", nil)
 	if err != nil {
 		fmt.Println("Failed to start HTTP server:", err)
