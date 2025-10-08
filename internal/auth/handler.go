@@ -1,10 +1,14 @@
 package auth
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
+	"scrypts/internal/config"
+	"scrypts/internal/utils"
+	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -21,8 +25,13 @@ type LoginReq struct {
 	Password string `json:"password"`
 }
 
-var JwtSecret = []byte(os.Getenv("JWT_SECRET"))
+var JwtSecret = config.JwtSecret
 var users = make(map[string]string)
+var wrappedKeys = make(map[string]struct {
+	Wrapped []byte
+	Nonce   []byte
+})
+var wrappedKeysMu sync.RWMutex
 
 func generateJWT(username string) (string, error) {
 	claims := jwt.MapClaims{
@@ -79,6 +88,23 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	users[req.Username] = hashed
+	userKey := make([]byte, 32)
+	if _, err := rand.Read(userKey); err != nil {
+		fmt.Println("warning: failed to generate user encryption key:", err)
+	} else {
+		// use configured master key (already 32 bytes)
+		wrapped, nonce, werr := utils.WrapKey(config.MasterKey, userKey)
+		if werr != nil {
+			fmt.Println("warning: failed to wrap user key:", werr)
+		} else {
+			wrappedKeysMu.Lock()
+			wrappedKeys[req.Username] = struct {
+				Wrapped []byte
+				Nonce   []byte
+			}{Wrapped: wrapped, Nonce: nonce}
+			wrappedKeysMu.Unlock()
+		}
+	}
 	fmt.Fprintln(w, "User registered successfully")
 }
 
@@ -106,4 +132,46 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Could not generate Token", http.StatusInternalServerError)
 	}
 	json.NewEncoder(w).Encode(map[string]string{"token": token})
+}
+
+// GetUsernameFromJWT extracts the username claim from a Bearer JWT in the request.
+func GetUsernameFromJWT(r *http.Request) (string, error) {
+	authHeader := r.Header.Get("Authorization")
+	if !strings.HasPrefix(authHeader, "Bearer ") {
+		return "", http.ErrNoCookie
+	}
+	tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		// enforce HMAC signing method
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method")
+		}
+		return JwtSecret, nil
+	})
+	if err != nil || !token.Valid {
+		return "", err
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return "", fmt.Errorf("invalid claims")
+	}
+	username, ok := claims["username"].(string)
+	if !ok {
+		return "", fmt.Errorf("username not found in token")
+	}
+	return username, nil
+}
+
+func GetUserKey(username string) ([]byte, error) {
+	wrappedKeysMu.RLock()
+	entry, ok := wrappedKeys[username]
+	wrappedKeysMu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("no encryption key for user")
+	}
+	k, err := utils.UnwrapKey(config.MasterKey, entry.Nonce, entry.Wrapped)
+	if err != nil {
+		return nil, err
+	}
+	return k, nil
 }
