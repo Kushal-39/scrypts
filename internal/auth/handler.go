@@ -2,13 +2,14 @@ package auth
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"scrypts/internal/config"
+	"scrypts/internal/storage"
 	"scrypts/internal/utils"
 	"strings"
-	"sync"
 	"time"
 	"unicode"
 
@@ -26,12 +27,6 @@ type LoginReq struct {
 }
 
 var JwtSecret = config.JwtSecret
-var users = make(map[string]string)
-var wrappedKeys = make(map[string]struct {
-	Wrapped []byte
-	Nonce   []byte
-})
-var wrappedKeysMu sync.RWMutex
 
 func generateJWT(username string) (string, error) {
 	claims := jwt.MapClaims{
@@ -77,34 +72,46 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Password is weak(must contain uppercase,lowercase,digit,symbol)", http.StatusBadRequest)
 		return
 	}
-	if _, exists := users[req.Username]; exists {
+	if _, err := storage.GetUser(req.Username); err == nil {
 		http.Error(w, "User already exists", http.StatusConflict)
 		return
+	} else if err != sql.ErrNoRows {
+		http.Error(w, "Server error", http.StatusInternalServerError)
+		return
 	}
+
 	hashed, err := HashPass(req.Password)
 	if err != nil {
 		http.Error(w, "Error in hashing password", http.StatusInternalServerError)
 		return
 	}
 
-	users[req.Username] = hashed
+	u := storage.User{
+		Username:     req.Username,
+		PasswordHash: hashed,
+		WrappedKey:   nil,
+		WrappedNonce: nil,
+		CreatedAt:    time.Now().Unix(),
+	}
+	if err := storage.CreateUser(u); err != nil {
+		http.Error(w, "Failed to create user", http.StatusInternalServerError)
+		return
+	}
+
 	userKey := make([]byte, 32)
 	if _, err := rand.Read(userKey); err != nil {
 		fmt.Println("warning: failed to generate user encryption key:", err)
 	} else {
-		// use configured master key (already 32 bytes)
 		wrapped, nonce, werr := utils.WrapKey(config.MasterKey, userKey)
 		if werr != nil {
 			fmt.Println("warning: failed to wrap user key:", werr)
 		} else {
-			wrappedKeysMu.Lock()
-			wrappedKeys[req.Username] = struct {
-				Wrapped []byte
-				Nonce   []byte
-			}{Wrapped: wrapped, Nonce: nonce}
-			wrappedKeysMu.Unlock()
+			if err := storage.SaveWrappedKey(req.Username, wrapped, nonce); err != nil {
+				fmt.Println("warning: failed to save wrapped key to DB:", err)
+			}
 		}
 	}
+
 	fmt.Fprintln(w, "User registered successfully")
 }
 
@@ -118,18 +125,21 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
-	hashed, exists := users[req.Username]
-	if !exists {
+
+	u, err := storage.GetUser(req.Username)
+	if err != nil {
 		http.Error(w, "Invalid username or password", http.StatusUnauthorized)
 		return
 	}
-	if !CheckPasswordHash(req.Password, hashed) {
+
+	if !CheckPasswordHash(req.Password, u.PasswordHash) {
 		http.Error(w, "Invalid username or password", http.StatusUnauthorized)
 		return
 	}
 	token, err := generateJWT(req.Username)
 	if err != nil {
 		http.Error(w, "Could not generate Token", http.StatusInternalServerError)
+		return
 	}
 	json.NewEncoder(w).Encode(map[string]string{"token": token})
 }
@@ -163,13 +173,14 @@ func GetUsernameFromJWT(r *http.Request) (string, error) {
 }
 
 func GetUserKey(username string) ([]byte, error) {
-	wrappedKeysMu.RLock()
-	entry, ok := wrappedKeys[username]
-	wrappedKeysMu.RUnlock()
-	if !ok {
+	u, err := storage.GetUser(username)
+	if err != nil {
+		return nil, err
+	}
+	if len(u.WrappedKey) == 0 || len(u.WrappedNonce) == 0 {
 		return nil, fmt.Errorf("no encryption key for user")
 	}
-	k, err := utils.UnwrapKey(config.MasterKey, entry.Nonce, entry.Wrapped)
+	k, err := utils.UnwrapKey(config.MasterKey, u.WrappedNonce, u.WrappedKey)
 	if err != nil {
 		return nil, err
 	}

@@ -6,11 +6,20 @@ import (
 	"scrypts/internal/auth"
 	"scrypts/internal/config"
 	"scrypts/internal/notes"
+	"scrypts/internal/storage"
 )
 
 func main() {
 	// initialize config (loads secrets)
 	config.Init()
+
+	//initialize db
+
+	if err:=storage.Init("./scrypts.db");err!=nil{
+		fmt.Println("Failed to init db: ",err)
+		return
+	}
+	defer storage.Close()
 
 	fmt.Println("Starting server on http://localhost:8080")
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
