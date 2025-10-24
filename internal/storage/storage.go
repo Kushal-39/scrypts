@@ -225,5 +225,9 @@ func GetNotesByOwner(owner string) ([]Note, error) {
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	if res == nil {
+		// return an empty slice instead of nil so JSON encoding yields []
+		res = []Note{}
+	}
 	return res, nil
 }

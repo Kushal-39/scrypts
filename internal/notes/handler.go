@@ -12,7 +12,6 @@ import (
 	"github.com/google/uuid"
 )
 
-
 type NoteReq struct {
 	Content string `json:"content"`
 }
@@ -59,21 +58,21 @@ func CreateNoteHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now().Unix()
-	snote:=storage.Note{
-		ID: noteID,
-		Owner: username,
-		Content: ciphertext,
-		Nonce: nonce,
-		Created: now,
+	snote := storage.Note{
+		ID:       noteID,
+		Owner:    username,
+		Content:  ciphertext,
+		Nonce:    nonce,
+		Created:  now,
 		Modified: now,
 	}
-	if err := storage.SaveNote(snote); err!=nil{
-		log.Printf("Savenote error: %v",err)
+	if err := storage.SaveNote(snote); err != nil {
+		log.Printf("Savenote error: %v", err)
 		http.Error(w, "Failed to Save Note", http.StatusInternalServerError)
 		return
 	}
 
-	w.Header().Set("Content-type","application/json")
+	w.Header().Set("Content-type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]string{"id": noteID})
 }
@@ -88,15 +87,46 @@ func GetNotesHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unauthorized Access", http.StatusUnauthorized)
 		return
 	}
-	snotes,err:=storage.GetNotesByOwner(username)
-	if err!=nil{
-		log.Printf("GetNotesByOwner error: %v",err)
+	snotes, err := storage.GetNotesByOwner(username)
+	if err != nil {
+		log.Printf("GetNotesByOwner error: %v", err)
 		http.Error(w, "failed to fetch notes", http.StatusInternalServerError)
 		return
 	}
-	
+
+	userKey, err := auth.GetUserKey(username)
+	if err != nil {
+		log.Printf("Get User Key error: %v", err)
+		http.Error(w, "server error", http.StatusInternalServerError)
+		return
+	}
+
+	type NoteResp struct {
+		ID       string `json:"id"`
+		Owner    string `json:"owner"`
+		Content  string `json:"content"`
+		Created  int64  `json:"created"`
+		Modified int64  `json:"modified"`
+	}
+	resp :=make([]NoteResp,0,len(snotes))
+	for _, sn := range snotes{
+		pt, derr:=utils.DecryptAESGCM(userKey,sn.Nonce,sn.Content)
+		if derr!=nil{
+			log.Printf("DecryptAESGCM error :%v",err)
+			http.Error(w,"failed to decrypt note", http.StatusInternalServerError)
+			return
+		}
+		resp = append(resp, NoteResp{
+			ID: sn.ID,
+			Owner: sn.Owner,
+			Content: string(pt),
+			Created: sn.Created,
+			Modified: sn.Modified,
+		})
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(snotes)
+	json.NewEncoder(w).Encode(resp)
 }
 
 func UpdateNoteHandler(w http.ResponseWriter, r *http.Request) {
@@ -126,21 +156,21 @@ func UpdateNoteHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Note content too large", http.StatusRequestEntityTooLarge)
 		return
 	}
-	snotes,err:= storage.GetNotesByOwner(username)
-	if err!=nil{
-		log.Printf("GetNotesByOwner err: %v",err)
-		http.Error(w,"failed to query notes", http.StatusInternalServerError)
+	snotes, err := storage.GetNotesByOwner(username)
+	if err != nil {
+		log.Printf("GetNotesByOwner err: %v", err)
+		http.Error(w, "failed to query notes", http.StatusInternalServerError)
 		return
 	}
 	var existing *storage.Note
-	for i := range snotes{
-		if snotes[i].ID==req.ID{
+	for i := range snotes {
+		if snotes[i].ID == req.ID {
 			existing = &snotes[i]
 			break
 		}
 	}
-	if existing ==nil{
-		http.Error(w,"Note not found",http.StatusNotFound)
+	if existing == nil {
+		http.Error(w, "Note not found", http.StatusNotFound)
 		return
 	}
 	userKey, err := auth.GetUserKey(username)
@@ -160,17 +190,17 @@ func UpdateNoteHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now().Unix()
-	snote:=storage.Note{
-		ID: req.ID,
-		Owner: username,
-		Content: ciphertext,
-		Nonce: nonce,
-		Created: existing.Created,
+	snote := storage.Note{
+		ID:       req.ID,
+		Owner:    username,
+		Content:  ciphertext,
+		Nonce:    nonce,
+		Created:  existing.Created,
 		Modified: now,
 	}
-	if err:=storage.UpdateNote(snote);err!=nil{
-		log.Printf("UpdateNote error: %v",err)
-		http.Error(w,"failed to update note",http.StatusInternalServerError)
+	if err := storage.UpdateNote(snote); err != nil {
+		log.Printf("UpdateNote error: %v", err)
+		http.Error(w, "failed to update note", http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -198,25 +228,25 @@ func DeleteNoteHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid note id", http.StatusBadRequest)
 		return
 	}
-	snotes,err:=storage.GetNotesByOwner(username)
-	if err!=nil{
-		log.Printf("GetNotesByOwner error: %v",err)
-		http.Error(w,"failed to query note", http.StatusInternalServerError)
+	snotes, err := storage.GetNotesByOwner(username)
+	if err != nil {
+		log.Printf("GetNotesByOwner error: %v", err)
+		http.Error(w, "failed to query note", http.StatusInternalServerError)
 		return
 	}
-	found:=false
-	for i := range snotes{
-		if snotes[i].ID == req.ID{
-			found=true
+	found := false
+	for i := range snotes {
+		if snotes[i].ID == req.ID {
+			found = true
 			break
 		}
 	}
-	if !found{
-		http.Error(w,"Note not found", http.StatusNotFound)
+	if !found {
+		http.Error(w, "Note not found", http.StatusNotFound)
 		return
 	}
-	if err:=storage.DeleteNote(req.ID,username); err!=nil{
-		log.Printf("DeleteNote error: %v",err)
+	if err := storage.DeleteNote(req.ID, username); err != nil {
+		log.Printf("DeleteNote error: %v", err)
 		http.Error(w, "failed to delete note", http.StatusInternalServerError)
 		return
 	}
