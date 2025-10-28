@@ -4,37 +4,52 @@ A secure, encrypted notes application with Go backend and Next.js frontend.
 
 ## Overview
 
-Scrypts is a full-stack web application for creating and managing encrypted notes. It features end-to-end encryption, JWT authentication, and a modern TypeScript frontend. Perfect for learning secure web development or as a foundation for production applications.
+Scrypts is a production-ready full-stack web application for creating and managing encrypted notes. It features hardened security, JWT authentication, rate limiting, and a modern TypeScript frontend. Includes comprehensive security measures based on OWASP best practices and VAPT audit recommendations.
 
 ## Architecture
 
-- **Backend**: Go with JWT auth, AES-GCM encryption, SQLite storage
-- **Frontend**: Next.js 13 + TypeScript + React
-- **Communication**: REST API with CORS enabled
-- **Security**: Scrypt password hashing, per-user encryption keys, server-side decryption
+- **Backend**: Go with JWT auth, bcrypt password hashing, AES-GCM encryption, SQLite storage
+- **Frontend**: Next.js 14 + TypeScript + React 18
+- **Security**: Rate limiting, CORS whitelist, security headers, timing attack prevention
+- **Communication**: REST API with strict CORS policy
+- **Encryption**: Per-user AES-GCM encryption keys, server-side decryption
 
 ## Features
 
+### Security (New!)
+- **Rate Limiting**: 10 requests/minute per IP on auth endpoints
+- **CORS Whitelist**: Strict origin validation with `ALLOWED_ORIGINS` env var
+- **Security Headers**: HSTS, CSP, X-Frame-Options, X-Content-Type-Options, etc.
+- **Entropy Validation**: Enforces strong secrets (32+ chars, 4.0+ bits/byte)
+- **Timing Attack Prevention**: Constant-time operations in authentication
+- **User Enumeration Prevention**: Generic errors and random delays
+- **Username Validation**: Regex whitelist (alphanumeric, underscore, hyphen only)
+- **Password Complexity**: Enforces uppercase, lowercase, digits, special chars (min 8 chars)
+- **Bcrypt Cost 12**: Increased from default for stronger password hashing
+
 ### Backend
-- User registration with scrypt password hashing
+- User registration with bcrypt password hashing (cost: 12)
 - JWT-based authentication with configurable expiry
 - AES-GCM encryption for note content (server stores encrypted data)
 - Server-side decryption for GET requests (plaintext response)
 - Per-user encryption keys wrapped with master key
 - SQLite persistence with WAL mode and foreign keys
-- CORS middleware for frontend integration
-- TLS/HTTPS support with configurable ports
-- Input validation and ownership checks
+- Rate-limited authentication endpoints (10 req/min per IP)
+- CORS middleware with whitelist validation
+- Security headers middleware (HSTS, CSP, X-Frame-Options, etc.)
+- TLS/HTTPS support with configurable ports and HTTP→HTTPS redirect
+- Input validation with regex patterns and ownership checks
 - Efficient database queries with indexes
 
 ### Frontend
-- TypeScript + React with Next.js 13
+- TypeScript + React 18 with Next.js 14
 - User registration and login UI
 - Full CRUD interface for notes
 - JWT token storage in localStorage
-- Real-time note updates
+- Real-time note updates with edit mode
 - Responsive design
 - Error handling and user feedback
+- No npm vulnerabilities (regularly updated)
 
 ## Quick Start
 
@@ -49,6 +64,11 @@ Scrypts is a full-stack web application for creating and managing encrypted note
 ```bash
 # From project root
 cd /home/syko/go_stuff/scrypts
+
+# Set required environment variables
+export JWT_SECRET="$(openssl rand -base64 48)"
+export MASTER_KEY="$(openssl rand -base64 48)"
+export ALLOWED_ORIGINS="http://localhost:3000"
 
 # Build the backend
 go build -o scrypts ./cmd/scrypts
@@ -117,7 +137,27 @@ The frontend will start on `http://localhost:3000`.
 
 ## Environment Variables
 
-### Backend
+### Backend (Required)
+
+**Critical - Application will not start without these:**
+
+- `JWT_SECRET` - JWT signing key (min 32 chars, high entropy required)
+  ```bash
+  export JWT_SECRET="$(openssl rand -base64 48)"
+  ```
+- `MASTER_KEY` - Master encryption key for wrapping user keys (min 32 chars, high entropy required)
+  ```bash
+  export MASTER_KEY="$(openssl rand -base64 48)"
+  ```
+
+**Recommended:**
+
+- `ALLOWED_ORIGINS` - Comma-separated list of allowed CORS origins (default: `http://localhost:3000,http://localhost:8080`)
+  ```bash
+  export ALLOWED_ORIGINS="http://localhost:3000,https://yourdomain.com"
+  ```
+
+**Optional:**
 
 - `SCRYPTS_DB_PATH` - Database file path (default: `./scrypts.db`)
 - `SCRYPTS_TLS_CERT` - Path to TLS certificate (optional)
@@ -131,46 +171,54 @@ The frontend will start on `http://localhost:3000`.
 
 ## Security Highlights
 
-### Encryption
-- AES-256-GCM authenticated encryption for all note content
-- Per-user encryption keys derived from password using scrypt
-- User keys wrapped with master key for secure storage
-- Server-side decryption for GET requests (plaintext in response)
-- Nonces stored per-note for GCM security
+### Authentication & Authorization
+- **Bcrypt password hashing** with cost factor 12 (increased from default)
+- **JWT tokens** with configurable expiry
+- **Username validation** with regex: `^[a-zA-Z0-9_-]{4,255}$`
+- **Password complexity** requirements: min 8 chars, uppercase, lowercase, digit, special char
+- **Rate limiting**: 10 requests/minute per IP on `/register` and `/login`
+- **Timing attack prevention**: Constant-time operations, dummy hash for non-existent users
+- **User enumeration prevention**: Generic error messages with random delays
+- **Ownership verification** on all note operations
 
-### Authentication
-- JWT tokens with configurable expiry
-- Scrypt password hashing (N=32768, r=8, p=1)
-- Username validation and length limits
-- Ownership verification on all note operations
+### Encryption
+- **AES-256-GCM** authenticated encryption for all note content
+- **Per-user encryption keys** derived from password using scrypt
+- **User keys wrapped** with master key for secure storage
+- **Server-side decryption** for GET requests (plaintext in response)
+- **Nonces stored per-note** for GCM security
 
 ### Infrastructure
-- SQLite with WAL mode for better concurrency
-- Foreign key constraints for data integrity
-- Input validation at HTTP layer
-- UUID validation for note IDs
-- CORS configuration for production deployment
-- TLS 1.2+ with secure cipher preferences
-- HTTP to HTTPS redirect support
+- **Security Headers**: HSTS, CSP, X-Frame-Options, X-Content-Type-Options, X-XSS-Protection
+- **CORS Whitelist**: Strict origin validation (no permissive `*`)
+- **Secret Validation**: Enforces 32+ character secrets with entropy checking (4.0+ bits/byte)
+- **SQLite with WAL mode** for better concurrency
+- **Foreign key constraints** for data integrity
+- **Input validation** at HTTP layer with regex patterns
+- **UUID validation** for note IDs
+- **TLS 1.2+** with secure cipher preferences
+- **HTTP to HTTPS redirect** support
 
 ## Project Structure
 
 ```
 scrypts/
 ├── cmd/scrypts/
-│   └── main.go              # Application entry point
+│   └── main.go              # Application entry point with middleware chain
 ├── internal/
 │   ├── auth/
-│   │   ├── handler.go       # Registration, login, JWT handling
-│   │   └── password.go      # Password hashing with scrypt
+│   │   ├── handler.go       # Registration, login, JWT (with timing attack prevention)
+│   │   └── password.go      # Bcrypt password hashing (cost: 12)
 │   ├── config/
-│   │   └── config.go        # Configuration and secrets
+│   │   └── config.go        # Configuration with entropy validation
 │   ├── middleware/
-│   │   └── cors.go          # CORS middleware
+│   │   ├── cors.go          # CORS whitelist middleware
+│   │   ├── security.go      # Security headers middleware (NEW)
+│   │   └── ratelimit.go     # Rate limiting middleware (NEW)
 │   ├── notes/
 │   │   └── handler.go       # Notes CRUD handlers
 │   ├── storage/
-│   │   └── storage.go       # SQLite database layer
+│   │   └── storage.go       # SQLite database layer with regex validation
 │   └── utils/
 │       └── crypto.go        # AES-GCM encryption utilities
 ├── frontend/
@@ -180,7 +228,7 @@ scrypts/
 │   │   └── notes.tsx        # Notes CRUD interface
 │   ├── styles/
 │   │   └── globals.css      # Global styles
-│   ├── package.json         # Frontend dependencies
+│   ├── package.json         # Frontend dependencies (Next.js 14)
 │   ├── tsconfig.json        # TypeScript config
 │   └── next.config.js       # Next.js configuration
 ├── go.mod                   # Go dependencies
@@ -192,12 +240,25 @@ scrypts/
 
 ### Backend
 
-1. **Set secrets via environment** (JWT secret, master wrap key)
-2. **Use a reverse proxy** (nginx/Caddy/Traefik) for TLS termination
-3. **Run as systemd service** with limited privileges
-4. **Configure CORS** to allow only your frontend domain in `internal/middleware/cors.go`
+1. **Generate strong secrets** using cryptographically secure random generators:
+   ```bash
+   export JWT_SECRET="$(openssl rand -base64 48)"
+   export MASTER_KEY="$(openssl rand -base64 48)"
+   ```
+   
+2. **Configure CORS whitelist** for your production domains:
+   ```bash
+   export ALLOWED_ORIGINS="https://yourdomain.com,https://app.yourdomain.com"
+   ```
+
+3. **Use a reverse proxy** (nginx/Caddy/Traefik) for TLS termination
+
+4. **Run as systemd service** with limited privileges
+
 5. **Set up DB backups** and monitoring
+
 6. **Enable logging** and metrics collection
+
 7. **Use production-grade secrets manager** (AWS Secrets Manager, Vault, etc.)
 
 Example systemd service:
@@ -247,8 +308,10 @@ For production, use Let's Encrypt via reverse proxy or certbot.
 
 ### CORS errors in browser
 - Ensure backend is running with CORS middleware enabled
+- Check that your origin is in the `ALLOWED_ORIGINS` environment variable
+- For local dev: `export ALLOWED_ORIGINS="http://localhost:3000"`
+- For production: Update `ALLOWED_ORIGINS` with your production domain
 - Check browser console for specific origin issues
-- For production, update `internal/middleware/cors.go` with your frontend domain
 
 ### "Failed to fetch notes"
 - Verify backend is running on port 8080
@@ -267,7 +330,8 @@ For production, use Let's Encrypt via reverse proxy or certbot.
 
 ## Testing
 
-Run the included end-to-end test script:
+### End-to-End Tests
+Run the included E2E test script:
 ```bash
 ./test.zsh
 ```
@@ -279,11 +343,27 @@ This will:
 - Create, read, update, and delete notes
 - Clean up test database
 
+### Security Tests
+Run the security test suite:
+```bash
+./test_security.zsh
+```
+
+This validates:
+- ✅ Username validation (regex enforcement)
+- ✅ Security headers (HSTS, CSP, X-Frame-Options, etc.)
+- ✅ Rate limiting (10 req/min on auth endpoints)
+- ✅ CORS whitelist policy
+- ✅ Password complexity requirements
+
 ## Development
 
 ### Backend
 ```bash
-# Run in development mode
+# Run in development mode (requires env vars)
+export JWT_SECRET="$(openssl rand -base64 48)"
+export MASTER_KEY="$(openssl rand -base64 48)"
+export ALLOWED_ORIGINS="http://localhost:3000"
 go run ./cmd/scrypts
 
 # Build for production
@@ -313,9 +393,22 @@ npx tsc --noEmit
 
 ## Next Steps
 
-- [ ] Add rate limiting on auth endpoints
+### Completed ✅
+- [x] Rate limiting on auth endpoints (10 req/min per IP)
+- [x] Security headers middleware (HSTS, CSP, X-Frame-Options, etc.)
+- [x] CORS whitelist with environment variable configuration
+- [x] Entropy validation for secrets (32+ chars, 4.0+ bits/byte)
+- [x] Timing attack prevention in authentication
+- [x] User enumeration prevention
+- [x] Username regex validation
+- [x] Increased bcrypt cost to 12
+- [x] Comprehensive security test suite
+
+### Planned Enhancements
+- [ ] CSRF protection middleware
 - [ ] Implement refresh tokens for session management
-- [ ] Add HSTS and security headers middleware
+- [ ] Add audit logging for authentication events
+- [ ] Add health check endpoint
 - [ ] Set up monitoring and logging (Prometheus, ELK)
 - [ ] Add end-to-end tests with Playwright
 - [ ] Implement password reset flow
@@ -323,6 +416,8 @@ npx tsc --noEmit
 - [ ] Migrate to PostgreSQL for production scale
 - [ ] Add real-time collaboration with WebSockets
 - [ ] Implement note sharing and permissions
+
+For detailed security improvements, see [SECURITY_IMPROVEMENTS.md](./SECURITY_IMPROVEMENTS.md).
 
 ## Contributing
 
@@ -334,6 +429,27 @@ Pull requests and issues are welcome! Please follow security best practices and 
 - Document API changes
 - Update README when adding features
 - Run formatters (gofmt, prettier) before committing
+- Review [SECURITY_AUDIT.md](./SECURITY_AUDIT.md) for security considerations
+
+## Security
+
+This project has undergone a comprehensive VAPT (Vulnerability Assessment and Penetration Testing) security audit. All critical and high-priority vulnerabilities have been addressed.
+
+📄 **Security Documentation:**
+- [SECURITY_AUDIT.md](./SECURITY_AUDIT.md) - Full VAPT audit report with 21 findings
+- [SECURITY_IMPROVEMENTS.md](./SECURITY_IMPROVEMENTS.md) - Detailed implementation of security fixes
+
+🔒 **Security Features:**
+- Rate limiting (10 req/min per IP)
+- CORS whitelist enforcement
+- Security headers (HSTS, CSP, X-Frame-Options, etc.)
+- Strong secret validation (32+ chars, entropy checking)
+- Timing attack prevention
+- User enumeration prevention
+- Bcrypt cost 12
+- Username regex validation
+
+If you discover a security vulnerability, please email security@yourdomain.com (or open a private security advisory on GitHub).
 
 ## License
 
