@@ -9,6 +9,7 @@ import (
 	"os"
 	"scrypts/internal/auth"
 	"scrypts/internal/config"
+	"scrypts/internal/middleware"
 	"scrypts/internal/notes"
 	"scrypts/internal/storage"
 	"time"
@@ -69,7 +70,7 @@ func main() {
 		}
 		httpsSrv := &http.Server{
 			Addr:         ":" + httpsPort,
-			Handler:      nil,
+			Handler:      middleware.CORS(http.DefaultServeMux),
 			TLSConfig:    tlsConfig,
 			ReadTimeout:  5 * time.Second,
 			WriteTimeout: 10 * time.Second,
@@ -109,7 +110,7 @@ func main() {
 	// If no TLS cert/key provided we fall back to plain HTTP (blocking)
 	log.Printf("Starting server on http://localhost:%s", httpPort)
 	if certPath == "" || keyPath == "" {
-		if err := http.ListenAndServe(":"+httpPort, nil); err != nil {
+		if err := http.ListenAndServe(":"+httpPort, middleware.CORS(http.DefaultServeMux)); err != nil {
 			fmt.Println("Failed to start HTTP server:", err)
 		}
 	}
