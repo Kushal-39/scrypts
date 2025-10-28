@@ -231,3 +231,18 @@ func GetNotesByOwner(owner string) ([]Note, error) {
 	}
 	return res, nil
 }
+
+func GetNoteByID(id string) (Note, error) {
+	if db == nil {
+		return Note{}, errors.New("db not initialized")
+	}
+	if !isValidUUID(id) {
+		return Note{}, errors.New("invalid note id format")
+	}
+	var n Note
+	row := db.QueryRow(`SELECT id, owner, content, nonce, created, modified FROM notes WHERE id =?`, id)
+	if err := row.Scan(&n.ID, &n.Owner, &n.Content, &n.Nonce, &n.Created, &n.Modified); err != nil {
+		return Note{}, err
+	}
+	return n, nil
+}

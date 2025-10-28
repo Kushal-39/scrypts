@@ -1,6 +1,7 @@
 package notes
 
 import (
+	"database/sql"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -108,19 +109,19 @@ func GetNotesHandler(w http.ResponseWriter, r *http.Request) {
 		Created  int64  `json:"created"`
 		Modified int64  `json:"modified"`
 	}
-	resp :=make([]NoteResp,0,len(snotes))
-	for _, sn := range snotes{
-		pt, derr:=utils.DecryptAESGCM(userKey,sn.Nonce,sn.Content)
-		if derr!=nil{
-			log.Printf("DecryptAESGCM error :%v",err)
-			http.Error(w,"failed to decrypt note", http.StatusInternalServerError)
+	resp := make([]NoteResp, 0, len(snotes))
+	for _, sn := range snotes {
+		pt, derr := utils.DecryptAESGCM(userKey, sn.Nonce, sn.Content)
+		if derr != nil {
+			log.Printf("DecryptAESGCM error :%v", err)
+			http.Error(w, "failed to decrypt note", http.StatusInternalServerError)
 			return
 		}
 		resp = append(resp, NoteResp{
-			ID: sn.ID,
-			Owner: sn.Owner,
-			Content: string(pt),
-			Created: sn.Created,
+			ID:       sn.ID,
+			Owner:    sn.Owner,
+			Content:  string(pt),
+			Created:  sn.Created,
 			Modified: sn.Modified,
 		})
 	}
@@ -156,20 +157,18 @@ func UpdateNoteHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Note content too large", http.StatusRequestEntityTooLarge)
 		return
 	}
-	snotes, err := storage.GetNotesByOwner(username)
-	if err != nil {
-		log.Printf("GetNotesByOwner err: %v", err)
-		http.Error(w, "failed to query notes", http.StatusInternalServerError)
+	existing, err := storage.GetNoteByID(req.ID)
+	if err == sql.ErrNoRows {
+		http.Error(w, "Note not found", http.StatusNotFound)
 		return
 	}
-	var existing *storage.Note
-	for i := range snotes {
-		if snotes[i].ID == req.ID {
-			existing = &snotes[i]
-			break
-		}
+	if err != nil {
+		log.Printf("GetNoteByID error: %v", err)
+		http.Error(w, "failed to query note", http.StatusInternalServerError)
+		return
 	}
-	if existing == nil {
+	// ownership check
+	if existing.Owner != username {
 		http.Error(w, "Note not found", http.StatusNotFound)
 		return
 	}
@@ -228,20 +227,18 @@ func DeleteNoteHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid note id", http.StatusBadRequest)
 		return
 	}
-	snotes, err := storage.GetNotesByOwner(username)
+	existing, err := storage.GetNoteByID(req.ID)
+	if err == sql.ErrNoRows {
+		http.Error(w, "Note not found", http.StatusNotFound)
+		return
+	}
 	if err != nil {
-		log.Printf("GetNotesByOwner error: %v", err)
+		log.Printf("GetNoteByID error: %v", err)
 		http.Error(w, "failed to query note", http.StatusInternalServerError)
 		return
 	}
-	found := false
-	for i := range snotes {
-		if snotes[i].ID == req.ID {
-			found = true
-			break
-		}
-	}
-	if !found {
+	// ownership check
+	if existing.Owner != username {
 		http.Error(w, "Note not found", http.StatusNotFound)
 		return
 	}
