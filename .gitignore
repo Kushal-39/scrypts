@@ -3,3 +3,93 @@
 *.db-wal
 *.zsh
 *.pem
+# dependencies
+/frontend/node_modules
+/.pnp
+.pnp.js
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# local env files
+.env*.local
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor directories and files
+.idea/
+.vscode/
+*.sublime-workspace
+*.sublime-project
+*.swp
+*~
+
+# Go
+# binary outputs
+scrypts
+/bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go test / coverage
+coverage.out
+
+# Python/virtualenv
+.venv/
+venv/
+
+# Terraform
+.terraform/
+.terraform.lock.hcl
+
+# Logs
+*.log
+logs/
+
+# Build / distribution
+/dist/
+/build/
+/out/
+
+# Misc
+.cache/
+/.cache
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# env
+.env
+.env.*
+
+# IDE history/cache
+.history/
+
