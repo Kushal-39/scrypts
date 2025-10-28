@@ -16,11 +16,21 @@ import (
 )
 
 func registerHandlers() {
+	// Create rate limiter: 10 requests per minute
+	rateLimiter := middleware.NewRateLimiter(10, time.Minute)
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "Scrypts is alive and kicking")
 	})
-	http.HandleFunc("/register", auth.RegisterHandler)
-	http.HandleFunc("/login", auth.LoginHandler)
+
+	// Apply rate limiting to authentication endpoints
+	http.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
+		rateLimiter.RateLimit(http.HandlerFunc(auth.RegisterHandler)).ServeHTTP(w, r)
+	})
+	http.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
+		rateLimiter.RateLimit(http.HandlerFunc(auth.LoginHandler)).ServeHTTP(w, r)
+	})
+
 	http.HandleFunc("/notes", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
@@ -68,9 +78,13 @@ func main() {
 			PreferServerCipherSuites: true,
 			CurvePreferences:         []tls.CurveID{tls.CurveP256, tls.X25519},
 		}
+
+		// Chain middleware: SecurityHeaders -> CORS -> DefaultServeMux
+		handler := middleware.SecurityHeaders(middleware.CORS(http.DefaultServeMux))
+
 		httpsSrv := &http.Server{
 			Addr:         ":" + httpsPort,
-			Handler:      middleware.CORS(http.DefaultServeMux),
+			Handler:      handler,
 			TLSConfig:    tlsConfig,
 			ReadTimeout:  5 * time.Second,
 			WriteTimeout: 10 * time.Second,
@@ -110,7 +124,9 @@ func main() {
 	// If no TLS cert/key provided we fall back to plain HTTP (blocking)
 	log.Printf("Starting server on http://localhost:%s", httpPort)
 	if certPath == "" || keyPath == "" {
-		if err := http.ListenAndServe(":"+httpPort, middleware.CORS(http.DefaultServeMux)); err != nil {
+		// Chain middleware: SecurityHeaders -> CORS -> DefaultServeMux
+		handler := middleware.SecurityHeaders(middleware.CORS(http.DefaultServeMux))
+		if err := http.ListenAndServe(":"+httpPort, handler); err != nil {
 			fmt.Println("Failed to start HTTP server:", err)
 		}
 	}

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	mrand "math/rand"
 	"net/http"
 	"scrypts/internal/config"
 	"scrypts/internal/storage"
@@ -47,7 +48,7 @@ func isComplex(password string) bool {
 			hasLower = true
 		case unicode.IsDigit(c):
 			hasDigit = true
-		case unicode.IsPunct(c):
+		case !unicode.IsLetter(c) && !unicode.IsDigit(c) && !unicode.IsSpace(c):
 			hasSpecial = true
 		}
 	}
@@ -69,11 +70,16 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !isComplex(req.Password) {
-		http.Error(w, "Password is weak(must contain uppercase,lowercase,digit,symbol)", http.StatusBadRequest)
+		http.Error(w, "Password must contain uppercase, lowercase, digit, and special character", http.StatusBadRequest)
 		return
 	}
-	if _, err := storage.GetUser(req.Username); err == nil {
-		http.Error(w, "User already exists", http.StatusConflict)
+
+	// Check if user exists (prevent user enumeration with timing attack mitigation)
+	_, err := storage.GetUser(req.Username)
+	if err == nil {
+		// User exists - add random delay to mimic registration time
+		time.Sleep(time.Duration(50+mrand.Intn(50)) * time.Millisecond)
+		http.Error(w, "Registration failed", http.StatusBadRequest)
 		return
 	} else if err != sql.ErrNoRows {
 		http.Error(w, "Server error", http.StatusInternalServerError)
@@ -127,21 +133,35 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Always perform timing-consistent operations
 	u, err := storage.GetUser(req.Username)
-	if err != nil {
-		http.Error(w, "Invalid username or password", http.StatusUnauthorized)
+
+	// Dummy hash for timing attack mitigation when user doesn't exist
+	dummyHash := "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
+	hashToCheck := dummyHash
+	userValid := false
+
+	if err == nil {
+		hashToCheck = u.PasswordHash
+		userValid = true
+	}
+
+	// Always check password hash (constant time)
+	passwordValid := CheckPasswordHash(req.Password, hashToCheck)
+
+	// Only succeed if both user exists and password is correct
+	if !userValid || !passwordValid {
+		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
 		return
 	}
 
-	if !CheckPasswordHash(req.Password, u.PasswordHash) {
-		http.Error(w, "Invalid username or password", http.StatusUnauthorized)
-		return
-	}
 	token, err := generateJWT(req.Username)
 	if err != nil {
-		http.Error(w, "Could not generate Token", http.StatusInternalServerError)
+		http.Error(w, "Could not generate token", http.StatusInternalServerError)
 		return
 	}
+
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"token": token})
 }
 

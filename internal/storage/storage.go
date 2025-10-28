@@ -3,6 +3,7 @@ package storage
 import (
 	"database/sql"
 	"errors"
+	"regexp"
 
 	_ "modernc.org/sqlite"
 )
@@ -13,6 +14,8 @@ const (
 	MaxNoteContentSize = 1 << 20 // 1 MiB
 	MaxUsernameLen     = 255
 )
+
+var usernameRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]{4,255}$`)
 
 func isValidUUID(s string) bool {
 	if len(s) != 36 {
@@ -38,8 +41,8 @@ func validateUsername(u string) error {
 	if u == "" {
 		return errors.New("username is required")
 	}
-	if len(u) > MaxUsernameLen {
-		return errors.New("username too long")
+	if !usernameRegex.MatchString(u) {
+		return errors.New("username must be 4-255 characters and contain only letters, numbers, hyphens, and underscores")
 	}
 	return nil
 }
