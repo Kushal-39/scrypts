@@ -435,10 +435,6 @@ Pull requests and issues are welcome! Please follow security best practices and 
 
 This project has undergone a comprehensive VAPT (Vulnerability Assessment and Penetration Testing) security audit. All critical and high-priority vulnerabilities have been addressed.
 
-📄 **Security Documentation:**
-- [SECURITY_AUDIT.md](./SECURITY_AUDIT.md) - Full VAPT audit report with 21 findings
-- [SECURITY_IMPROVEMENTS.md](./SECURITY_IMPROVEMENTS.md) - Detailed implementation of security fixes
-
 🔒 **Security Features:**
 - Rate limiting (10 req/min per IP)
 - CORS whitelist enforcement
