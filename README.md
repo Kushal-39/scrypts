@@ -417,7 +417,6 @@ npx tsc --noEmit
 - [ ] Add real-time collaboration with WebSockets
 - [ ] Implement note sharing and permissions
 
-For detailed security improvements, see [SECURITY_IMPROVEMENTS.md](./SECURITY_IMPROVEMENTS.md).
 
 ## Contributing
 
@@ -429,7 +428,6 @@ Pull requests and issues are welcome! Please follow security best practices and 
 - Document API changes
 - Update README when adding features
 - Run formatters (gofmt, prettier) before committing
-- Review [SECURITY_AUDIT.md](./SECURITY_AUDIT.md) for security considerations
 
 ## Security
 
@@ -445,8 +443,3 @@ This project has undergone a comprehensive VAPT (Vulnerability Assessment and Pe
 - Bcrypt cost 12
 - Username regex validation
 
-If you discover a security vulnerability, please email security@yourdomain.com (or open a private security advisory on GitHub).
-
-## License
-
-MIT
