@@ -1,7 +1,6 @@
 *.db
 *.db-shm
 *.db-wal
-*.zsh
 *.pem
 # dependencies
 /frontend/node_modules
